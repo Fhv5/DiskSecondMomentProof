@@ -1,0 +1,15 @@
+Graph6 input inventory. SHA-256 digests refer to the included UTF-8 files.
+
+Generation commands for n=3,4,5,6: plantri -p -c1 -g N | shortg
+For n=2, direct enumeration leaves only the connected graph A_.
+
+data/planar_graphs/planar2.g6: classes=1; sha256=fae4bfc454bd04363dcd5222772f2973b1193e1ff6f676e822a427323a677ef9
+data/connected_graphs/graphs2.txt: classes=1; sha256=fae4bfc454bd04363dcd5222772f2973b1193e1ff6f676e822a427323a677ef9
+data/planar_graphs/planar3.g6: classes=2; sha256=5966edf890849db6cb03626431916231a81a30c9db9a4781a4a8f2e5dc7e6129
+data/connected_graphs/graphs3.txt: classes=2; sha256=5966edf890849db6cb03626431916231a81a30c9db9a4781a4a8f2e5dc7e6129
+data/planar_graphs/planar4.g6: classes=6; sha256=582c0346b1fa543b366ee86da0673df0cf7877c7737cb1d417b26339dd64d117
+data/connected_graphs/graphs4.txt: classes=5; sha256=b68fd10565a7147968a27af6dd19b3b7fe9091250a9a9632999648cc444ea09d
+data/planar_graphs/planar5.g6: classes=20; sha256=8e46f56097f869f0c08fdc886bc45a4c190929b6095e0b4f5f26be7b6c99a7de
+data/connected_graphs/graphs5.txt: classes=13; sha256=60a4c820113dfc8c5915d919dbb65771c616e4c3e6e97439a703911c0be7af91
+data/planar_graphs/planar6.g6: classes=99; sha256=95b6e6e38108502cf24285d9c1722e2392ba4de8783d14424537a4a44bcaab1a
+data/connected_graphs/graphs6.txt: classes=46; sha256=a9fc04dafacafce44fa80ce3aaf1b6c602c76fd231392b0c154d871755356cc9

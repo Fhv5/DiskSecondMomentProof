@@ -1,0 +1,5 @@
+/output/
+*.cov
+*.jl.cov
+*.jl.*.cov
+*.mem

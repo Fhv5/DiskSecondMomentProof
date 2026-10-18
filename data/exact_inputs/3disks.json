@@ -1,0 +1,67 @@
+{
+  "version": "3.0",
+  "discos": 3,
+  "tipo_datos": "exact_proof_inputs",
+  "indexing": "1-based",
+  "objective": "second_moment",
+  "total_entries": 1,
+  "graphs": [
+    {
+      "nombre": "Equilateral triangle",
+      "graph6": "Bw",
+      "critical_id": "C-n3-g6-4277-001",
+      "representation": "exact_qsqrt3",
+      "contactos": [
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          2,
+          3
+        ]
+      ],
+      "centros": {
+        "1": [
+          {
+            "a": "-1",
+            "b": "0"
+          },
+          {
+            "a": "0",
+            "b": "-1/3"
+          }
+        ],
+        "2": [
+          {
+            "a": "1",
+            "b": "0"
+          },
+          {
+            "a": "0",
+            "b": "-1/3"
+          }
+        ],
+        "3": [
+          {
+            "a": "0",
+            "b": "0"
+          },
+          {
+            "a": "0",
+            "b": "2/3"
+          }
+        ]
+      },
+      "multipliers": {
+        "1-2": "1/3",
+        "1-3": "1/3",
+        "2-3": "1/3"
+      }
+    }
+  ]
+}

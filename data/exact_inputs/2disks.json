@@ -1,0 +1,47 @@
+{
+  "version": "3.0",
+  "discos": 2,
+  "tipo_datos": "exact_proof_inputs",
+  "indexing": "1-based",
+  "objective": "second_moment",
+  "total_entries": 1,
+  "graphs": [
+    {
+      "nombre": "Touching pair",
+      "graph6": "A_",
+      "critical_id": "C-n2-g6-415F-001",
+      "representation": "exact_qsqrt3",
+      "contactos": [
+        [
+          1,
+          2
+        ]
+      ],
+      "centros": {
+        "1": [
+          {
+            "a": "-1",
+            "b": "0"
+          },
+          {
+            "a": "0",
+            "b": "0"
+          }
+        ],
+        "2": [
+          {
+            "a": "1",
+            "b": "0"
+          },
+          {
+            "a": "0",
+            "b": "0"
+          }
+        ]
+      },
+      "multipliers": {
+        "1-2": "1/2"
+      }
+    }
+  ]
+}
