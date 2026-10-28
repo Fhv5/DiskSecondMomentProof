@@ -10,9 +10,9 @@ export BoundaryRootWitness,
 
 using ArbNumerics
 using ...DiskSecondMomentProof
-using ..LeafExclusion
+using ..LeafFilters
 
-const LE = LeafExclusion
+const LE = LeafFilters
 const Q = DiskSecondMomentProof.Qsqrt3
 const RationalBig = Rational{BigInt}
 

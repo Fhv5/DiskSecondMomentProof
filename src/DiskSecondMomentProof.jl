@@ -28,7 +28,6 @@ const FamilyCoverage = ExactFamilyCoverage
 include("refinement/Refinement.jl")
 include("pipeline/candidate_pipeline.jl")
 include("io/graph_census.jl")
-include("search/objective_free_leaf_exclusion.jl")
 include("search/minimum_candidate_search.jl")
 include("pipeline/candidate_deduplication.jl")
 include("evidence/search_conventions.jl")

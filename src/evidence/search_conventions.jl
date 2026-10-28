@@ -2,23 +2,27 @@ module SearchConventions
 
 using JSON3
 using ..DiskSecondMomentProof: BoxRecords
-using ..CandidateSearch: LeafExclusion, LeaflessSearch, BoundaryRoots
+using ..CandidateSearch: LeafFilters, IntervalSearch, BoundaryRoots
 
-const LE = LeafExclusion
-const LS = LeaflessSearch
+const LE = LeafFilters
+const LS = IntervalSearch
 const BR = BoundaryRoots
 
 edge_arrays(edges) = [collect(edge) for edge in edges]
 canonical_edge(edge) = minmax(edge...)
 
 """Describe the deterministic chart used by one angular search."""
-function search_chart(graph; leaf::Union{Nothing,Int}=nothing)
-    tree = leaf === nothing ? LS.rooted_tree(graph) : LE.anchored_tree(graph, leaf)
+function search_chart(graph; leaf::Union{Nothing,Int}=isempty(graph.leaves) ? nothing : first(graph.leaves))
+    return search_chart(graph, LS.angular_chart(graph; leaf=leaf))
+end
+
+function search_chart(graph, coordinates::LS.AngularChart)
+    tree = coordinates.tree
+    leaf = coordinates.selected_leaf
+    reflection = coordinates.reflection_index
+    constraints = coordinates.symmetry_constraints
     k = graph.n - 2
-    reflection, constraints = leaf === nothing ? (1, Tuple{Int,Int}[]) :
-        LE.angular_symmetry_data(graph, tree)
-    box = leaf === nothing ? LS.initial_angle_box(graph.n) :
-        LE.initial_box(graph.n, reflection)
+    box = LS.initial_angle_box(graph, coordinates)
     tree_edges = Set(canonical_edge.(tree))
     extra_edges = [edge for edge in graph.edges if !(edge in tree_edges)]
     permutations = Dict{String,Any}[]
@@ -42,10 +46,9 @@ function search_chart(graph; leaf::Union{Nothing,Int}=nothing)
         "angle_edges" => edge_arrays(tree[2:end]),
         "contact_edges" => edge_arrays(graph.edges),
         "non_tree_contacts" => edge_arrays(extra_edges),
-        "reduced_multiplier_edges" => leaf === nothing && length(extra_edges) < k ?
+        "reduced_multiplier_edges" => length(extra_edges) < k ?
             edge_arrays(extra_edges) : Vector{Int}[],
-        "root_system" => leaf !== nothing ? nothing :
-            length(extra_edges) == k ? "contact_equations" : "reduced_kkt",
+        "root_system" => length(extra_edges) == k ? "contact_equations" : "reduced_kkt",
         "reflection_angle_index" => k == 0 ? nothing : reflection,
         "angle_order_constraints" => edge_arrays(constraints),
         "symmetry_pattern" => isempty(constraints) ? "reflection_only" :
@@ -66,26 +69,16 @@ function attach_trace!(chart, output_directory, stage, code; leaf=nothing)
 end
 
 """Write conventions for the searches actually performed, including partial runs."""
-function write_search_conventions(output_directory, n, all_codes, leaf_result,
+function write_search_conventions(output_directory, n, all_codes,
                                   search_results, target_graph, family_entries)
-    leaf_graphs = Dict(result.graph6 => result for result in leaf_result.graph_results)
     angular_graphs = Dict(result.graph6 => result for result in search_results)
     family_graphs = Set(string(entry["graph6"]) for entry in family_entries)
     graphs = Dict{String,Any}[]
     for code in all_codes
         entry = Dict{String,Any}("graph6" => code, "searches" => Dict{String,Any}[])
-        if haskey(leaf_graphs, code)
-            result = leaf_graphs[code]
-            entry["route"] = "leaf_exclusion"
-            for run in result.runs
-                chart = search_chart(LE.graph_data(code); leaf=run.leaf)
-                chart["status"] = string(run.status)
-                attach_trace!(chart, output_directory, "leaf", code; leaf=run.leaf)
-                push!(entry["searches"], chart)
-            end
-        elseif haskey(angular_graphs, code)
-            entry["route"] = "angular_search"
-            chart = search_chart(LE.graph_data(code))
+        if haskey(angular_graphs, code)
+            entry["route"] = "interval_search"
+            chart = search_chart(LE.graph_data(code), angular_graphs[code].chart)
             chart["status"] = string(angular_graphs[code].status)
             attach_trace!(chart, output_directory, "angular", code)
             if !isempty(BR.registered_witnesses(code))
@@ -101,7 +94,7 @@ function write_search_conventions(output_directory, n, all_codes, leaf_result,
         push!(graphs, entry)
     end
     record = Dict(
-        "schema_version" => 1,
+        "schema_version" => 2,
         "n" => n,
         "index_base" => 1,
         "angle_unit" => "radians",

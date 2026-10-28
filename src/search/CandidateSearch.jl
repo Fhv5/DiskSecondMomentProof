@@ -1,13 +1,13 @@
 module CandidateSearch
 
-include("leaf_exclusion.jl")
+include("leaf_filters.jl")
 include("boundary_roots.jl")
-include("leafless_search.jl")
+include("interval_search.jl")
 include("target_realizations.jl")
 
-export LeafExclusion,
+export LeafFilters,
        BoundaryRoots,
-       LeaflessSearch,
+       IntervalSearch,
        TargetRealizations
 
 end

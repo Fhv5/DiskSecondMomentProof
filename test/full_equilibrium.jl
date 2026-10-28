@@ -1,8 +1,8 @@
 @testset "Rectangular interval equilibrium solver" begin
     solver = DiskSecondMomentProof.FullEquilibrium
     D = DiskSecondMomentProof
-    LE = D.CandidateSearch.LeafExclusion
-    LS = D.CandidateSearch.LeaflessSearch
+    LE = D.CandidateSearch.LeafFilters
+    LS = D.CandidateSearch.IntervalSearch
     QB = Rational{BigInt}
     for precision in (128, 512)
         T = Core.apply_type(ArbReal, precision)
@@ -30,7 +30,7 @@
 
         graph = LE.graph_data("Bw")
         tree = LS.rooted_tree(graph)
-        box = LE.LeafAngleBox(QB[1], QB[11//10], 0)
+        box = LE.AngleBox(QB[1], QB[11//10], 0)
         terms = LS.reduced_terms(T, graph, tree, LS.interval_angles(T, box))
         A = LE.contact_matrix_interval(T, terms.raw, graph)
         status, multipliers = solver.enclose_multipliers(T, A, vec(terms.centers))

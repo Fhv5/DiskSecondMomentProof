@@ -15,7 +15,7 @@ using DiskSecondMomentProof
         @test_throws ArgumentError safety.interval_record(T("NaN"))
         @test_throws ArgumentError safety.interval_record(T("Inf"))
         @test !safety.zero_excluded(T("NaN"))
-        @test !DiskSecondMomentProof.CandidateSearch.LeafExclusion.strictly_outside_zero(T("NaN"))
+        @test !DiskSecondMomentProof.CandidateSearch.LeafFilters.strictly_outside_zero(T("NaN"))
         @test safety.verified_inverse(T[0 1; 1 0]) !== nothing
         @test safety.verified_inverse(T[1 1; 1 1]) === nothing
         @test safety.verified_inverse(T[1 0; 0 T("NaN")]) === nothing
@@ -25,8 +25,8 @@ end
 
 @testset "Rational-to-Arb enclosure" begin
     safety = DiskSecondMomentProof.IntervalSafety
-    leaf = DiskSecondMomentProof.CandidateSearch.LeafExclusion
-    leafless = DiskSecondMomentProof.CandidateSearch.LeaflessSearch
+    leaf = DiskSecondMomentProof.CandidateSearch.LeafFilters
+    interval = DiskSecondMomentProof.CandidateSearch.IntervalSearch
     Q = Rational{BigInt}
     near_one = Q(big(2)^600 + 1, big(2)^600)
     tiny_negative = -Q(big(2)^203 + 1, big(2)^707)
@@ -42,9 +42,9 @@ end
         for depth in (0, 24, 80, 140)
             lower = Q(-22, 7) + Q(1, big(2)^depth)
             upper = Q(22, 7) - Q(1, big(2)^(depth + 1))
-            box = leaf.LeafAngleBox(Q[lower], Q[upper], depth)
+            box = leaf.AngleBox(Q[lower], Q[upper], depth)
             for enclosure in (only(leaf.interval_angles(T, box)),
-                              only(leafless.interval_angles(T, box)))
+                              only(interval.interval_angles(T, box)))
                 @test safety.rational_bound(lowerbound(enclosure, ArbFloat)) <= lower
                 @test upper <= safety.rational_bound(upperbound(enclosure, ArbFloat))
             end
@@ -54,9 +54,9 @@ end
 end
 
 @testset "Box transcript format" begin
-    leaf = DiskSecondMomentProof.CandidateSearch.LeafExclusion
+    leaf = DiskSecondMomentProof.CandidateSearch.LeafFilters
     records = DiskSecondMomentProof.BoxRecords
-    box = leaf.LeafAngleBox(Rational{BigInt}[-22//7, 0],
+    box = leaf.AngleBox(Rational{BigInt}[-22//7, 0],
                             Rational{BigInt}[22//7, 22//7], 0)
     io = IOBuffer()
     records.record_box(io, box, :split)
@@ -66,12 +66,13 @@ end
 @testset "Active workflow modules" begin
     @test_throws ErrorException DiskSecondMomentProof.ProofWorkflow.execute(["--n", "8"])
     @test_throws ArgumentError second_moment_target(8)
-    @test_throws ArgumentError DiskSecondMomentProof.ObjectiveFreeLeafExclusion.prove_leaf_census(String[])
-    @test_throws ArgumentError DiskSecondMomentProof.MinimumCandidateSearch.search_candidate_graph(
-        "DDW", CandidateSearch.LeaflessSearch.SearchOptions(max_boxes=1),
+    leaf_result = DiskSecondMomentProof.MinimumCandidateSearch.search_candidate_graph(
+        "DDW", CandidateSearch.IntervalSearch.SearchOptions(max_boxes=1),
     )
+    @test leaf_result.status == :unresolved
+    @test isempty(leaf_result.candidates)
     result = DiskSecondMomentProof.MinimumCandidateSearch.search_candidate_graph(
-        "D`{", CandidateSearch.LeaflessSearch.SearchOptions(max_boxes=1),
+        "D`{", CandidateSearch.IntervalSearch.SearchOptions(max_boxes=1),
     )
     @test result.status == :unresolved
     @test result.stats.visited == 1
@@ -124,7 +125,7 @@ end
                            if get(entry, "representation", "") == "exact_family")
         selected = DiskSecondMomentProof.ProofWorkflow.regular_search_graphs(
             codes, string(target["graph6"]), family_codes)
-        partition = vcat(leaf_codes, [string(target["graph6"])],
+        partition = vcat([string(target["graph6"])],
                          collect(family_codes), selected)
         @test length(leaf_codes) == expected_leaf_counts[n]
         @test Set(partition) == Set(codes)
@@ -133,7 +134,7 @@ end
 end
 
 @testset "Leaf symmetry coverage guard" begin
-    leaf_search = CandidateSearch.LeafExclusion
+    leaf_search = CandidateSearch.LeafFilters
     for (n, expected_ordered) in ((5, 6), (6, 18))
         ordered = 0
         for code in load_connected_graphs(n)
@@ -156,7 +157,7 @@ end
     reflection_index, constraints = leaf_search.angular_symmetry_data(graph, tree)
     @test reflection_index == 3
     @test constraints == [(1, 2)]
-    unregistered = leaf_search.LeafGraphData(
+    unregistered = leaf_search.GraphData(
         "unregistered", graph.n, graph.edges, graph.adjacency,
         graph.nonedges, graph.leaves, graph.bridge_cuts,
     )
@@ -237,8 +238,8 @@ end
 end
 
 @testset "EPVW boundary root" begin
-    graph = CandidateSearch.LeafExclusion.graph_data("EPVW")
-    tree = CandidateSearch.LeaflessSearch.rooted_tree(graph)
+    graph = CandidateSearch.LeafFilters.graph_data("EPVW")
+    tree = CandidateSearch.IntervalSearch.rooted_tree(graph)
     witnesses = CandidateSearch.BoundaryRoots.registered_witnesses("EPVW")
     @test length(witnesses) == 1
     witness = only(witnesses)
@@ -251,7 +252,7 @@ end
 end
 
 @testset "Refinement and direct transfer of isolated roots" begin
-    options = CandidateSearch.LeaflessSearch.SearchOptions(max_boxes=500000)
+    options = CandidateSearch.IntervalSearch.SearchOptions(max_boxes=500000)
     result = DiskSecondMomentProof.MinimumCandidateSearch.search_candidate_graph("D`{", options)
     @test result.status == :complete
     @test length(result.candidates) == 2
@@ -356,16 +357,16 @@ end
         result = DiskSecondMomentProof.ProofWorkflow.execute([
             "--n", "3", "--precision", "128", "--record-evidence", "--output", output,
         ])
-        @test result.leaf_filter.status == :proved_excluded
-        @test result.leaf_filter.total_graphs == 2
-        @test result.leaf_filter.leaf_graphs == result.leaf_filter.proved_graphs == 1
-        @test only(result.leaf_filter.graph_results).graph6 == "BW"
-        @test all(isempty(run.unresolved) for run in only(result.leaf_filter.graph_results).runs)
-        @test isempty(result.search_results)
+        @test result.connected_census == 2
+        @test length(result.search_results) == 1
+        @test only(result.search_results).graph6 == "BW"
+        @test only(result.search_results).status == :complete
+        @test isempty(only(result.search_results).unresolved_boxes)
+        @test isempty(only(result.search_results).candidates)
         @test result.analysis.processed_candidates == result.analysis.declared_candidates == 1
         @test only(result.analysis.results).conclusion == :target_minimizer_exactly_verified
         run = DiskSecondMomentProof.read_json_file(joinpath(output, "n3", "run.json"))
-        @test run["schema_version"] == 2
+        @test run["schema_version"] == 3
         @test haskey(run["source_sha256"], ".gitattributes")
         @test haskey(run["source_text_sha256_lf"], "src/evidence/archive.jl")
         @test run["project_text_sha256_lf"] ==
@@ -373,14 +374,15 @@ end
         @test haskey(run["files_sha256"], "analysis/n3-interval-decisions.jsonl")
         @test run["connected_census"] == 2
         @test run["leaf_excluded"] == 1
-        @test run["angular_graphs"] == run["angular_candidates"] == 0
+        @test run["interval_graphs"] == 1
+        @test run["isolated_boxes"] == 0
         @test run["analysis_objects"] == 1
         @test haskey(run["source_sha256"], "data/planar_graphs/planar3.g6")
         @test haskey(run["source_sha256"], "data/exact_inputs/3disks.json")
         @test haskey(run["files_sha256"], "refinement/candidates.jsonl")
         @test filesize(joinpath(output, "n3", "refinement", "candidates.jsonl")) == 0
         summary = readlines(joinpath(output, "n3", "search", "angle_boxes", "n3-summary.tsv"))
-        @test length(summary) == 1
+        @test length(summary) == 2
         report = read(joinpath(output, "n3", "analysis", "evidence", "n3", "001-C-n3-g6-4277-001.txt"), String)
         @test occursin("minimum_noncontact_gap = nothing", report)
     end
@@ -394,3 +396,4 @@ include("interval_minmax.jl")
 include("full_equilibrium.jl")
 include("search_conventions.jl")
 include("public_api.jl")
+include("common_search.jl")

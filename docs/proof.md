@@ -67,15 +67,16 @@ Choose a deterministic spanning tree and fix its first oriented edge at
 `(0,0),(2,0)`. The other `k=n-2` absolute edge directions place all centers
 recursively by `c_child=c_parent+2(cos theta_i,sin theta_i)`. Centering is
 a translation. This parametrizes every realization modulo rigid motions.
-The leaf search anchors a selected leaf edge; the regular search anchors
-its deterministic breadth-first tree edge.
+For a graph with leaves, anchor its first labelled leaf edge. Otherwise,
+anchor the first contact edge. Complete the tree breadth first in label order.
+The same search loop processes both cases.
 
 Choose directions in `[-pi,pi]`. Reflection negates them all, allowing one
 coordinate `r` to be nonnegative. The initial rational box is `[0,22/7]`
 in that coordinate and `[-22/7,22/7]` elsewhere. Since `22/7>pi`, it covers
 every required representative, including angular boundaries.
 
-The leaf search adds only sibling orders justified by checked graph
+For graphs with leaves, add only sibling orders justified by checked graph
 automorphisms and these registered tree patterns:
 
 | Pattern | Structure and coverage |
@@ -92,11 +93,11 @@ Use identity if `alpha<=beta` and `beta>=0`; swap and reflect if
 Closed endpoints allow either representative of the direction `pi`.
 The rhombus identity follows from the two radius-2 circle intersections.
 
-[The symmetry routines](../src/search/leaf_exclusion.jl) check each
+[The symmetry routines](../src/search/leaf_filters.jl) check each
 transposition against the graph's edge set and verify its registered tree
 pattern. Other patterns use reflection alone. Permutations act by
 `p[old]=new`, `c'_(p(i))=c_i`; directions are recovered on the oriented tree.
-The regular search uses reflection on its first free angle.
+Graphs without leaves use reflection on their first free angle.
 
 ## Necessary conditions in a box
 
@@ -124,7 +125,7 @@ If `a,b` are the centroids of `S` and its complement, put `v=a-c_q`,
 conditions are `w dot Jv=0` and `-w dot v>=0`, with `J(x,y)=(-y,x)`.
 A square subsystem of bridge equations can also exclude a root by Krawczyk.
 
-The full multiplier filter forms `[A^T | grad M]` and eliminates all
+Every surviving box then enters the contact-balance filter, which forms `[A^T | grad M]` and eliminates all
 coordinate equations with interval pivots excluding zero. Row operations
 enclose every compatible point system; an eliminated entry is zero by the
 identity `a-(a/p)p=0`. A zero-left-side row whose right side excludes zero
@@ -135,6 +136,18 @@ enclosures express necessary feasibility; root existence is established
 by isolation.
 
 ## Isolation, transfer and second variation
+
+All graphs assigned to interval computation use the same loop. First apply
+symmetry and geometric tests, then leaf and bridge conditions where applicable,
+then the contact-balance filter. From depth 18, a square subsystem of bridge
+rotation equations can give an additional exclusion. From depth 12, surviving
+boxes attempt root isolation whether or not their graph has leaves. Neither
+leaf nor bridge conditions are assumed sufficient by themselves to exclude
+an entire graph.
+
+The common limits are 3,000,000 visited boxes per graph, depth 140 and minimum
+angular width 2^-60. A failed or inconclusive verification causes subdivision;
+an operational limit leaves unresolved boxes and prevents closure.
 
 Let `q` be the number of non-tree contacts, with equations `h(theta)=0`.
 Outerplanarity gives `q<=k`. For `q=k`, isolate the square contact system.
@@ -163,7 +176,7 @@ visit the lower child first. The two closed children cover their parent.
 Uncertain arithmetic and resource limits leave unresolved boxes.
 
 Each isolated root must have strict noncontacts. Refinement rechecks and
-contracts that same angular root, maps it to centered Cartesian intervals
+contracts that same angular root in its stored oriented tree, maps it to centered Cartesian intervals
 and recovers the complete, unclipped contact multipliers. Every isolated
 box proceeds to analysis. The search makes no comparison with `U_n`.
 
@@ -188,7 +201,7 @@ are `(-1,0),(1,0)`, contact rank 1 and multiplier `1/2`.
 
 For three disks, the pair-distance identity gives `M>=2`; equality requires
 all three distances to be 2, hence the equilateral triangle. The connected
-classes are the path `BW`, excluded by the leaf search, and triangle `Bw`,
+classes are the path `BW`, excluded by the interval search, and triangle `Bw`,
 verified algebraically. Its contact rank is 3 and each multiplier is `1/3`.
 
 ## Four disks
@@ -204,7 +217,7 @@ Thus every minimum is connected.
 Enumeration of all 64 labeled graphs gives six connected classes.
 K4 (`C~`) is impossible: three displacements from one center would have
 Gram matrix with diagonal 4 and off-diagonal 2, of rank 3 in the plane.
-The leaf search excludes `CF,CN,CR`. The remaining classes are the four-cycle
+The interval search excludes `CF,CN,CR`. The remaining classes are the four-cycle
 `Cr` and its five-contact endpoint `C^`.
 
 For `Cr`, its two opposite centers can be fixed at `(-a,0),(a,0)`, `a>0`.
@@ -303,10 +316,9 @@ For five and six disks the census partitions as follows:
 
 | Route | n=5 | n=6 |
 |---|---:|---:|
-| Leaf graphs | 9 | 33 |
 | Rigid target | 1 | 1 |
 | Continuous critical family | 0 | 1 |
-| Regular angular graphs | 3 | 11 |
+| Interval search (including graphs with leaves) | 12 | 44 |
 | Total | 13 | 46 |
 
 Complete angular coverage, zero unresolved boxes and terminal analysis

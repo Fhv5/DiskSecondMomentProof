@@ -2,8 +2,8 @@ module MinimumCandidateSearch
 
 using ArbNumerics
 using ..DiskSecondMomentProof
-const LS = DiskSecondMomentProof.CandidateSearch.LeaflessSearch
-const LE = DiskSecondMomentProof.CandidateSearch.LeafExclusion
+const LS = DiskSecondMomentProof.CandidateSearch.IntervalSearch
+const LE = DiskSecondMomentProof.CandidateSearch.LeafFilters
 const BR = DiskSecondMomentProof.CandidateSearch.BoundaryRoots
 
 """Enclose contact multipliers and reject incompatible stationarity or signs."""
@@ -16,12 +16,17 @@ function nonnegative_full_multipliers(::Type{T}, graph, terms) where {T<:ArbReal
     solve_status == :rank && return (:rank, nothing)
 
     multipliers = T[]
-    for value in enclosure
+    leaf_limit = DiskSecondMomentProof.IntervalSafety.enclosing_rational(T, (graph.n - 1) // graph.n)
+    for (index, value) in enumerate(enclosure)
         DiskSecondMomentProof.IntervalSafety.finite_interval(value) ||
             return (:rank, nothing)
         upperbound(value) < 0 && return (:multiplier, nothing)
         lower = DiskSecondMomentProof.IntervalSafety.interval_max(lowerbound(value), zero(T))
         upper = upperbound(value)
+        left, right = graph.edges[index]
+        if left in graph.leaves || right in graph.leaves
+            upper = DiskSecondMomentProof.IntervalSafety.interval_min(upper, upperbound(leaf_limit))
+        end
         lower <= upper || return (:multiplier, nothing)
         push!(multipliers, setinterval(lower, upper))
     end
@@ -42,32 +47,51 @@ function refine_unique_image(::Type{T}, evaluator, image; iterations=8) where {T
     return refined
 end
 
-"""Apply objective-free geometric and first-order filters to an angle box."""
-function classify_candidate_box(
-    ::Type{T},
-    graph,
-    tree,
-    boundary_roots,
-    box,
-    options,
-) where {T<:ArbReal}
+"""Apply geometric, graph-specific and contact-balance tests to one angular box."""
+function classify_candidate_box(::Type{T}, graph, chart, boundary_roots, box, options) where {T<:ArbReal}
+    LE.symmetry_possible(box, chart.symmetry_constraints) || return (:symmetry, nothing)
+    tree = chart.tree
     angles = LS.interval_angles(T, box)
-    terms = LS.reduced_terms(T, graph, tree, angles)
-    any(LS.strictly_outside_zero, terms.constraints) && return (:contact, nothing)
+    raw, centers = LE.centers_from_angles(T, graph, tree, angles)
+    tree_edges = Set(minmax(a, b) for (a, b) in tree)
+    for edge in graph.edges
+        edge in tree_edges && continue
+        LS.strictly_outside_zero(LE.squared_gap(raw, edge..., T(4))) &&
+            return (:contact, nothing)
+    end
     for (left, right) in graph.nonedges
-        upperbound(LE.squared_gap(terms.raw, left, right, T(4))) <= 0 &&
+        upperbound(LE.squared_gap(raw, left, right, T(4))) <= 0 &&
             return (:overlap, nothing)
     end
 
-    multiplier_status, full_multipliers =
-        nonnegative_full_multipliers(T, graph, terms)
+    leaf_limit = DiskSecondMomentProof.IntervalSafety.enclosing_rational(T, (graph.n - 1) // graph.n)
+    LE.leaf_equilibrium_possible(centers, raw, graph, leaf_limit) ||
+        return (:leaf_equilibrium, nothing)
+    LE.bridge_equilibrium_possible(centers, raw, graph, leaf_limit) ||
+        return (:bridge_equilibrium, nothing)
+    LE.bridge_rotation_possible(centers, graph) || return (:bridge_rotation, nothing)
+    if box.depth >= 18 && LE.krawczyk_excludes_bridge_root(T, graph, tree, angles)
+        return (:bridge_krawczyk, nothing)
+    end
+
+    terms = (; raw, centers)
+    multiplier_status, full_multipliers = nonnegative_full_multipliers(T, graph, terms)
     multiplier_status == :rank && return (:rank, nothing)
     multiplier_status == :stationarity && return (:stationarity, nothing)
     multiplier_status == :multiplier && return (:multiplier, nothing)
-    LS.strictly_outside_zero(T(2) * sum(full_multipliers) - terms.moment) &&
+    moment = sum(value * value for value in centers) / T(2)
+    LS.strictly_outside_zero(T(2) * sum(full_multipliers) - moment) &&
         return (:moment_balance, nothing)
 
     box.depth < options.krawczyk_depth && return (:subdivide, nothing)
+    return isolate_candidate_box(T, graph, chart, boundary_roots, box, full_multipliers)
+end
+
+"""Attempt root exclusion or isolation in the same chart used by the filters."""
+function isolate_candidate_box(::Type{T}, graph, chart, boundary_roots, box, full_multipliers) where {T<:ArbReal}
+    tree = chart.tree
+    angles = LS.interval_angles(T, box)
+    terms = LS.reduced_terms(T, graph, tree, angles)
     q = length(terms.extra_edges)
     k = length(angles)
     if q == k
@@ -88,6 +112,7 @@ function classify_candidate_box(
                 candidate_terms.centers,
                 candidate_terms.moment,
                 :rigid_contact_root,
+                chart,
             ))
         end
     elseif q < k
@@ -117,6 +142,7 @@ function classify_candidate_box(
                 candidate_terms.centers,
                 candidate_terms.moment,
                 :flexible_critical_root,
+                chart,
             ))
         end
     else
@@ -131,14 +157,14 @@ function search_candidate_graph(graph6::AbstractString, options::LS.SearchOption
     graph6 = String(graph6)
     graph = LE.graph_data(graph6)
     graph.n in (3, 4, 5, 6) || throw(ArgumentError("the proof supports three, four, five or six disks"))
-    isempty(graph.leaves) || throw(ArgumentError("candidate isolation requires a leafless graph"))
-    tree = LS.rooted_tree(graph)
+    chart = LS.angular_chart(graph)
+    tree = chart.tree
     boundary_roots = [
         BR.verify_witness(graph, tree, witness)
         for witness in BR.registered_witnesses(graph6)
     ]
-    stack = LE.LeafAngleBox[LS.initial_angle_box(graph.n)]
-    unresolved = LE.LeafAngleBox[]
+    stack = LE.AngleBox[LS.initial_angle_box(graph, chart)]
+    unresolved = LE.AngleBox[]
     candidates = LS.IsolatedCandidate[]
     stats = LS.SearchStats()
     started = time()
@@ -150,7 +176,7 @@ function search_candidate_graph(graph6::AbstractString, options::LS.SearchOption
         reason, candidate = classify_candidate_box(
             T,
             graph,
-            tree,
+            chart,
             boundary_roots,
             box,
             options,
@@ -196,6 +222,7 @@ function search_candidate_graph(graph6::AbstractString, options::LS.SearchOption
         candidates,
         unresolved,
         time() - started,
+        chart,
     )
 end
 

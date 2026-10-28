@@ -30,14 +30,10 @@ using DiskSecondMomentProof
     invalid = deepcopy(entry)
     invalid["multipliers"]["1-2"] = "0"
     @test_throws ArgumentError verify_target(invalid)
-    stage = DiskSecondMomentProof.ObjectiveFreeLeafExclusion
-    @test_throws ArgumentError stage.prove_leaf_census(["A_"])
-    @test_throws ArgumentError stage.prove_leaf_census(["A_", "A_"]; reserved_exact_targets=["A_"])
-    @test_throws ArgumentError stage.prove_leaf_census(["BW", "Bw"]; reserved_exact_targets=["BW"])
-    reserved = stage.prove_leaf_census(["A_"]; reserved_exact_targets=["A_"])
-    @test reserved.total_graphs == 1
-    @test reserved.leaf_graphs == reserved.proved_graphs == 0
-    @test isempty(reserved.graph_results)
+    @test isempty(DiskSecondMomentProof.ProofWorkflow.regular_search_graphs(["A_"], "A_", Set{String}()))
+    @test_throws ArgumentError DiskSecondMomentProof.MinimumCandidateSearch.search_candidate_graph(
+        "A_", CandidateSearch.IntervalSearch.SearchOptions())
+
 end
 
 @testset "Two-disk complete workflow and evidence" begin
@@ -45,10 +41,7 @@ end
         result = DiskSecondMomentProof.ProofWorkflow.execute([
             "--n", "2", "--precision", "128", "--record-evidence", "--output", output,
         ])
-        @test result.leaf_filter.status == :proved_excluded
-        @test result.leaf_filter.total_graphs == 1
-        @test result.leaf_filter.leaf_graphs == result.leaf_filter.proved_graphs == 0
-        @test isempty(result.leaf_filter.graph_results)
+        @test result.connected_census == 1
         @test isempty(result.search_results)
         @test result.analysis.processed_candidates == result.analysis.declared_candidates == 1
         @test only(result.analysis.results).conclusion == :target_minimizer_exactly_verified
@@ -58,13 +51,11 @@ end
         run = DiskSecondMomentProof.read_json_file(joinpath(output, "n2", "run.json"))
         @test run["connected_census"] == 1
         @test run["leaf_graphs"] == run["leaf_excluded"] == 0
-        @test run["reserved_leaf_targets"] == ["A_"]
-        @test run["angular_graphs"] == run["angular_candidates"] == 0
+        @test run["interval_graphs"] == run["isolated_boxes"] == 0
         @test run["analysis_objects"] == 1
         @test haskey(run["source_sha256"], "data/planar_graphs/planar2.g6")
         @test haskey(run["source_sha256"], "docs/proof.md")
         @test filesize(joinpath(output, "n2", "refinement", "candidates.jsonl")) == 0
         @test length(readlines(joinpath(output, "n2", "search", "angle_boxes", "n2-summary.tsv"))) == 1
-        @test length(readlines(joinpath(output, "n2", "search", "leaf_exclusion", "n2-leaf-interval-summary.tsv"))) == 1
     end
 end

@@ -57,7 +57,7 @@ julia --project=. test/runtests.jl
 
 ## Contents
 
-- `src/`: exact arithmetic, interval searches, refinement and analysis.
+- `src/`: exact arithmetic, a common interval search, refinement and analysis.
 - `data/`: graph censuses and algebraic configurations and families.
 - `scripts/`: proof launchers and census generation.
 - `test/`: mathematical and integration checks.

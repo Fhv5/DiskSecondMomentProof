@@ -320,12 +320,6 @@ function _verify_contact_geometry(c::Configuration{T}, g::ContactGraph) where {T
     return :exact_graph_proved, minimum_gap
 end
 
-function _angular_root_edge(g::ContactGraph)
-    edges = sort(collect(_edge_tuple.(g.edges)), by=edge -> (edge[2], edge[1]))
-    isempty(edges) && throw(ArgumentError("angular gauge requires at least one contact edge"))
-    return first(edges)
-end
-
 function _verify_gauge_transversality(
     c_box::Configuration{T},
     root_left::Int,
@@ -362,7 +356,7 @@ function verify_refined_candidate(refined, candidate_id::String; precision::Int=
         "The full contact-multiplier enclosure was computed from that same root image.",
     ]
     graph_status, minimum_gap = _verify_contact_geometry(c_box, g)
-    root_left, root_right = _angular_root_edge(g)
+    root_left, root_right = first(refined.chart.tree)
     gauge_status = _verify_gauge_transversality(c_box, root_left, root_right)
     A_box = contact_matrix(c_box, g)
     valid_minor, _ = _verified_determinant(A_box, refined.contact_pivots)

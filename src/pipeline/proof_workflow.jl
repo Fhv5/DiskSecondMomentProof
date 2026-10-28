@@ -2,11 +2,10 @@ module ProofWorkflow
 
 using ArbNumerics
 using ..DiskSecondMomentProof
-const LS = DiskSecondMomentProof.CandidateSearch.LeaflessSearch
-const LE = DiskSecondMomentProof.CandidateSearch.LeafExclusion
+const LS = DiskSecondMomentProof.CandidateSearch.IntervalSearch
+const LE = DiskSecondMomentProof.CandidateSearch.LeafFilters
 const BR = DiskSecondMomentProof.CandidateSearch.BoundaryRoots
 const CD = DiskSecondMomentProof.CandidateDeduplication
-const OFLE = DiskSecondMomentProof.ObjectiveFreeLeafExclusion
 using ..MinimumCandidateSearch: search_candidate_graph
 
 const TERMINAL_NON_TARGET_CONCLUSIONS = Set([
@@ -113,11 +112,11 @@ function assert_closure_complete(analysis)
     return nothing
 end
 
-"""Select regular search graphs after the leaf, target, and family routes."""
+"""Select every census graph not assigned to an algebraic verification."""
 function regular_search_graphs(all_codes, target_graph, family_graphs)
     return [
         code for code in all_codes
-        if isempty(LE.graph_data(code).leaves) && code != target_graph &&
+        if code != target_graph &&
            !(code in family_graphs)
     ]
 end
@@ -126,8 +125,7 @@ end
 function execute(arguments)
     started = time()
     value_options = Set(("--n", "--precision", "--max-boxes", "--max-depth",
-        "--minimum-width-power", "--krawczyk-depth", "--leaf-max-boxes",
-        "--leaf-max-depth", "--leaf-minimum-width-power", "--graph6", "--output"))
+        "--minimum-width-power", "--krawczyk-depth", "--graph6", "--output"))
     index = 1
     while index <= length(arguments)
         option = arguments[index]
@@ -145,12 +143,6 @@ function execute(arguments)
     max_depth = parse(Int, option_value(arguments, "--max-depth", "140"))
     minimum_width_power = parse(Int, option_value(arguments, "--minimum-width-power", "60"))
     krawczyk_depth = parse(Int, option_value(arguments, "--krawczyk-depth", "12"))
-    leaf_max_boxes = parse(Int, option_value(arguments, "--leaf-max-boxes", "250000"))
-    leaf_max_depth = parse(Int, option_value(arguments, "--leaf-max-depth", "80"))
-    leaf_minimum_width_power = parse(
-        Int,
-        option_value(arguments, "--leaf-minimum-width-power", "24"),
-    )
     graph_filter = option_value(arguments, "--graph6", "")
     run_analysis = !has_flag(arguments, "--skip-analysis")
     record_evidence = has_flag(arguments, "--record-evidence")
@@ -218,52 +210,28 @@ function execute(arguments)
     codes = regular_search_graphs(all_codes, target_graph, family_graphs)
     if !isempty(graph_filter)
         graph_filter in codes || error(
-            "graph6 $graph_filter is not a regular non-target search graph for n=$n",
+            "graph6 $graph_filter is not a non-target interval search graph for n=$n",
         )
         codes = [graph_filter]
     end
     output_root = abspath(option_value(arguments, "--output", joinpath(DiskSecondMomentProof.package_root(), "output")))
     output_directory = isempty(graph_filter) ? joinpath(output_root, "n$n") :
         joinpath(output_root, "n$n", "single-$(bytes2hex(Vector{UInt8}(codeunits(graph_filter))))")
-    leaf_output_directory = joinpath(output_directory, "search", "leaf_exclusion")
     search_output_directory = joinpath(output_directory, "search", "angle_boxes")
     evidence_directory = record_evidence ? joinpath(output_directory, "evidence") : nothing
     results = LS.GraphSearchResult[]
 
     println("Computational proof for n=$n")
     println("Connected census: $(length(all_codes)); precision: $precision bits")
-    println("Candidate search: leaf exclusion running")
-    println(
-        "Leaf limits: max_boxes=$leaf_max_boxes max_depth=$leaf_max_depth " *
-        "minimum_width=2^(-$leaf_minimum_width_power)",
-    )
-    leaf_result = OFLE.prove_leaf_census(
-        all_codes;
-        reserved_exact_targets=n == 2 ? [target_graph] : String[],
-        options=LE.LeafExclusionOptions(
-            precision=precision,
-            max_boxes=leaf_max_boxes,
-            max_depth=leaf_max_depth,
-            minimum_width_power=leaf_minimum_width_power,
-        ),
-        verbose=false,
-        trace_directory=evidence_directory,
-    )
-    LE.write_leaf_exclusion_reports(leaf_result, leaf_output_directory)
-    println(
-        "Leaf exclusion: $(leaf_result.proved_graphs)/$(leaf_result.leaf_graphs) " *
-        "graphs proved excluded",
-    )
-    leaf_result.status == :proved_excluded || error(
-        "leaf exclusion is incomplete; refusing to omit unresolved leaf graphs",
-    )
+    println("Common interval search: max_boxes=$max_boxes max_depth=$max_depth " *
+            "minimum_width=2^(-$minimum_width_power) krawczyk_depth=$krawczyk_depth")
     println(n == 4 ? "Equality family endpoint reserved for algebraic analysis: $target_graph" :
             "Announced target reserved for algebraic analysis: $target_graph")
     println(
-        "Leafless families reserved for their analytic route: " *
+        "Families reserved for their algebraic verification: " *
         (isempty(family_graphs) ? "none" : join(sort!(collect(family_graphs)), ", ")),
     )
-    println("Angular search graphs: $(length(codes))")
+    println("Interval search graphs: $(length(codes))")
     println("Objective pruning: disabled; multiplier sign: nonnegative")
     for (index, code) in enumerate(codes)
         println("[$index/$(length(codes))] Starting graph $code")
@@ -292,7 +260,7 @@ function execute(arguments)
     LS.write_search_reports(results, n, search_output_directory)
     if record_evidence
         conventions_path = DiskSecondMomentProof.SearchConventions.write_search_conventions(
-            output_directory, n, all_codes, leaf_result, results, target_graph,
+            output_directory, n, all_codes, results, target_graph,
             family_entries)
         println("Search conventions: $conventions_path")
     end
@@ -362,17 +330,15 @@ function execute(arguments)
                 "max_depth" => max_depth,
                 "minimum_width_power" => minimum_width_power,
                 "krawczyk_depth" => krawczyk_depth,
-                "leaf_max_boxes" => leaf_max_boxes,
-                "leaf_max_depth" => leaf_max_depth,
-                "leaf_minimum_width_power" => leaf_minimum_width_power,
+                "bridge_krawczyk_depth" => 18,
                 "objective_pruning" => false,
             )
             record = DiskSecondMomentProof.EvidenceArchive.write_run_record(
-                output_directory, n, parameters, leaf_result, results, analysis)
+                output_directory, n, parameters, length(all_codes), results, analysis)
             println("Evidence inventory: $record")
         end
     end
-    return (n=n, leaf_filter=leaf_result, search_results=results, analysis=analysis)
+    return (n=n, connected_census=length(all_codes), search_results=results, analysis=analysis)
 end
 
 end

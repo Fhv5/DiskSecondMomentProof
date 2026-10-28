@@ -42,7 +42,7 @@ end
 
 """Freeze parameters, version information, file inventory, and file digests."""
 function write_run_record(output_directory::AbstractString, n::Int,
-                          parameters, leaf_result, search_results, analysis)
+                          parameters, connected_census, search_results, analysis)
     isfile(joinpath(output_directory, "search", "conventions.json")) ||
         error("search conventions must be written before the run inventory")
     package_root = normpath(joinpath(@__DIR__, "..", ".."))
@@ -65,7 +65,7 @@ function write_run_record(output_directory::AbstractString, n::Int,
     end
     manifest = joinpath(package_root, "Manifest.toml")
     record = Dict(
-        "schema_version" => 2,
+        "schema_version" => 3,
         "n" => n,
         "julia_version" => string(VERSION),
         "git_revision" => revision,
@@ -79,12 +79,12 @@ function write_run_record(output_directory::AbstractString, n::Int,
         "manifest_text_sha256_lf" => isfile(manifest) ? sha256_text_lf(manifest) : nothing,
         "parameters" => parameters,
         "search_conventions_file" => "search/conventions.json",
-        "connected_census" => leaf_result.total_graphs,
-        "leaf_graphs" => leaf_result.leaf_graphs,
-        "leaf_excluded" => leaf_result.proved_graphs,
-        "reserved_leaf_targets" => n == 2 ? ["A_"] : String[],
-        "angular_graphs" => length(search_results),
-        "angular_candidates" => sum((length(result.candidates) for result in search_results); init=0),
+        "connected_census" => connected_census,
+        "interval_graphs" => length(search_results),
+        "leaf_graphs" => count(result -> result.chart.selected_leaf !== nothing, search_results),
+        "leaf_excluded" => count(result -> result.chart.selected_leaf !== nothing &&
+            result.status == :complete && isempty(result.candidates), search_results),
+        "isolated_boxes" => sum((length(result.candidates) for result in search_results); init=0),
         "analysis_objects" => analysis.processed_candidates,
         "equality_family_objects" => count(result -> result.conclusion == :target_family_exactly_verified, analysis.results),
         "equality_endpoint_objects" => count(result -> result.conclusion == :target_endpoint_exactly_verified, analysis.results),

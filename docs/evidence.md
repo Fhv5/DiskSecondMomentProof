@@ -10,9 +10,11 @@ entry point enables it with `--record-evidence`.
 `output/releases/<run-id>/release.json` identifies the commit, selected disk
 counts, thread policy and SHA-256 digests. Its `source.zip` is `git archive`
 of that commit. `<case>/run.json` records parameters, environment, graph
-counts, conclusions, source digests and result-file digests. Source inventories
+counts (`interval_graphs`, `leaf_graphs`, `leaf_excluded`, `isolated_boxes`),
+conclusions, source digests and result-file digests. Source inventories
 include documentation, tests and data. Text identities also record SHA-256
-after replacing CRLF with LF; all other bytes are preserved.
+after replacing CRLF with LF; all other bytes are preserved. The run inventory
+uses schema 3 and the search-conventions record uses schema 2.
 
 ## Coordinates and transcripts
 
@@ -22,7 +24,9 @@ box, symmetry orders, permutations and transcript path. Indices are one-based;
 angles are in radians along parent-to-child edges. Permutations map old
 labels to new labels: `p[old]=new`, so `c'_(p(i))=c_i`.
 
-`<case>/evidence/leaf/` and `<case>/evidence/angular/` contain TSV transcripts.
+`<case>/evidence/angular/` contains one TSV transcript per searched graph,
+including graphs with leaves. `<case>/search/angle_boxes/nN-summary.tsv`
+records the corresponding counters and completion status.
 Filenames encode graph6 bytes in hexadecimal. Each line gives box depth and
 decision in depth-first order. The rational initial box, widest-coordinate
 bisection rule and lower-child-first order reconstruct every tested box.
@@ -39,6 +43,7 @@ The [proof](proof.md) derives the necessary conditions behind the decisions.
 | `multiplier` | Multiplier enclosure misses required force bounds. |
 | `stationarity` | A balance-residual component excludes zero. |
 | `moment_balance` | `2 sum(lambda)-M` excludes zero. |
+| `bridge_krawczyk` | A square subsystem of bridge-rotation equations excludes a root. |
 | `krawczyk` | Residual or Krawczyk image excludes a root. |
 | `boundary_root` | Uniqueness identifies an exact additional-contact witness. |
 | `isolated` | Strict Krawczyk inclusion and strict noncontacts hold. |
@@ -51,7 +56,7 @@ source evaluates its interval inequalities.
 ## Candidate analysis
 
 `<case>/refinement/candidates.jsonl` stores root enclosures with rational
-endpoints: lower numerator/denominator and upper numerator/denominator,
+endpoints and their oriented tree: lower numerator/denominator and upper numerator/denominator,
 encoded as decimal integer strings. Serialization and restoration verify
 outward containment. Reported decimal displays are for inspection.
 

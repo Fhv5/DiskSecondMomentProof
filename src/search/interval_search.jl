@@ -1,7 +1,8 @@
-module LeaflessSearch
+module IntervalSearch
 
 export SearchOptions,
        SearchStats,
+       AngularChart,
        IsolatedCandidate,
        GraphSearchResult,
        write_search_reports
@@ -9,15 +10,15 @@ export SearchOptions,
 using ArbNumerics
 using LinearAlgebra
 using ...DiskSecondMomentProof
-using ..LeafExclusion
+using ..LeafFilters
 using ..BoundaryRoots
 
-const LE = LeafExclusion
+const LE = LeafFilters
 const BR = BoundaryRoots
 const IS = DiskSecondMomentProof.IntervalSafety
 const RationalBig = Rational{BigInt}
 
-"""Precision and operational limits for the leafless interval search."""
+"""Precision and operational limits for the interval search."""
 struct SearchOptions
     precision::Int
     max_boxes::Int
@@ -27,11 +28,17 @@ struct SearchOptions
 end
 
 SearchOptions(; precision=512, max_boxes=3_000_000, max_depth=140,
-              minimum_width_power=60, krawczyk_depth=12) =
+              minimum_width_power=60, krawczyk_depth=12) = begin
+    precision > 0 || throw(ArgumentError("precision must be positive"))
+    max_boxes > 0 || throw(ArgumentError("max_boxes must be positive"))
+    max_depth >= 0 || throw(ArgumentError("max_depth cannot be negative"))
+    minimum_width_power >= 0 || throw(ArgumentError("minimum_width_power cannot be negative"))
+    krawczyk_depth >= 0 || throw(ArgumentError("krawczyk_depth cannot be negative"))
     SearchOptions(precision, max_boxes, max_depth,
                   RationalBig(1, BigInt(2)^minimum_width_power), krawczyk_depth)
+end
 
-"""Counters recording all terminal decisions in a leafless search."""
+"""Counters recording all terminal decisions in an interval search."""
 mutable struct SearchStats
     visited::Int
     split::Int
@@ -43,11 +50,36 @@ mutable struct SearchStats
     moment_balance::Int
     krawczyk::Int
     boundary_root::Int
+    leaf_equilibrium::Int
+    bridge_equilibrium::Int
+    bridge_rotation::Int
+    symmetry::Int
+    bridge_krawczyk::Int
     isolated::Int
     unresolved::Int
 end
 
-SearchStats() = SearchStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+SearchStats() = SearchStats(ntuple(_ -> 0, fieldcount(SearchStats))...)
+
+"""Tree coordinates and symmetry restrictions used throughout one graph search."""
+struct AngularChart
+    selected_leaf::Union{Nothing,Int}
+    tree::Vector{Tuple{Int,Int}}
+    reflection_index::Int
+    symmetry_constraints::Vector{Tuple{Int,Int}}
+end
+
+function angular_chart(graph; leaf=isempty(graph.leaves) ? nothing : first(graph.leaves))
+    if leaf === nothing
+        return AngularChart(nothing, rooted_tree(graph), 1, Tuple{Int,Int}[])
+    end
+    leaf in graph.leaves || throw(ArgumentError("selected anchor is not a graph leaf"))
+    tree = LE.anchored_tree(graph, leaf)
+    reflection, constraints = LE.angular_symmetry_data(graph, tree)
+    return AngularChart(leaf, tree, reflection, constraints)
+end
+
+initial_angle_box(graph, chart::AngularChart) = LE.initial_box(graph.n, chart.reflection_index)
 
 """A unique interval-enclosed critical realization found in one angle box."""
 struct IsolatedCandidate
@@ -57,6 +89,7 @@ struct IsolatedCandidate
     center_box::Matrix{ArbReal}
     moment::ArbReal
     kind::Symbol
+    chart::AngularChart
 end
 
 """Complete or unresolved interval-search result for one contact graph."""
@@ -68,8 +101,9 @@ struct GraphSearchResult
     status::Symbol
     stats::SearchStats
     candidates::Vector{IsolatedCandidate}
-    unresolved_boxes::Vector{LE.LeafAngleBox}
+    unresolved_boxes::Vector{LE.AngleBox}
     elapsed_seconds::Float64
+    chart::AngularChart
 end
 
 function rooted_tree(graph)
@@ -97,10 +131,10 @@ function initial_angle_box(n::Int)
     lower = fill(-pi_upper, n - 2)
     upper = fill(pi_upper, n - 2)
     !isempty(lower) && (lower[1] = 0)
-    return LE.LeafAngleBox(lower, upper, 0)
+    return LE.AngleBox(lower, upper, 0)
 end
 
-function interval_angles(::Type{T}, box::LE.LeafAngleBox) where {T<:ArbReal}
+function interval_angles(::Type{T}, box::LE.AngleBox) where {T<:ArbReal}
     return [IS.enclosing_rational_interval(T, box.lower[i], box.upper[i])
             for i in eachindex(box.lower)]
 end
@@ -281,17 +315,22 @@ function increment!(stats::SearchStats, reason::Symbol)
     reason == :moment_balance && (stats.moment_balance += 1)
     reason == :krawczyk && (stats.krawczyk += 1)
     reason == :boundary_root && (stats.boundary_root += 1)
+    reason == :leaf_equilibrium && (stats.leaf_equilibrium += 1)
+    reason == :bridge_equilibrium && (stats.bridge_equilibrium += 1)
+    reason == :bridge_rotation && (stats.bridge_rotation += 1)
+    reason == :symmetry && (stats.symmetry += 1)
+    reason == :bridge_krawczyk && (stats.bridge_krawczyk += 1)
 end
 
 function interval_text(value::ArbReal)
     return "[$(lowerbound(value)), $(upperbound(value))]"
 end
 
-const SUMMARY_HEADER = "graph6\tedges\texpected_dimension\tstatus\tvisited\tcontact\toverlap\tmultiplier\tstationarity\tmoment_balance\tkrawczyk\tboundary_root\trank_terminal\tisolated\tunresolved\telapsed_seconds"
+const SUMMARY_HEADER = "graph6\tedges\texpected_dimension\tstatus\tvisited\tsplit\tsymmetry\tleaf_equilibrium\tbridge_equilibrium\tbridge_rotation\tbridge_krawczyk\tcontact\toverlap\tmultiplier\tstationarity\tmoment_balance\tkrawczyk\tboundary_root\trank_terminal\tisolated\tunresolved\telapsed_seconds"
 const CANDIDATE_HEADER = "graph6\tcandidate\tkind\tmoment_interval\tcenter_intervals"
 const BOUNDARY_ROOT_HEADER = "graph6\ttarget_graph6\toccurrences\tangle_pi_multiples\treduced_multipliers\textra_contacts\tpermutation\texact_moment\texact_kkt_determinant"
 
-"""Write complete leafless-search reports from one finished run."""
+"""Write complete interval-search reports from one finished run."""
 function write_search_reports(results, n::Int, output_dir::String)
     mkpath(output_dir)
     summary_path = joinpath(output_dir, "n$n-summary.tsv")
@@ -301,7 +340,10 @@ function write_search_reports(results, n::Int, output_dir::String)
         println(io, SUMMARY_HEADER)
         for result in results
             println(io, join((result.graph6, result.contacts, result.expected_dimension,
-                              result.status, result.stats.visited, result.stats.contact,
+                              result.status, result.stats.visited, result.stats.split,
+                              result.stats.symmetry, result.stats.leaf_equilibrium,
+                              result.stats.bridge_equilibrium, result.stats.bridge_rotation,
+                              result.stats.bridge_krawczyk, result.stats.contact,
                               result.stats.overlap,
                               result.stats.multiplier, result.stats.stationarity,
                               result.stats.moment_balance, result.stats.krawczyk,
@@ -328,7 +370,7 @@ function write_search_reports(results, n::Int, output_dir::String)
         for result in results
             result.stats.boundary_root == 0 && continue
             graph = LE.graph_data(result.graph6)
-            tree = rooted_tree(graph)
+            tree = result.chart.tree
             for witness in BR.registered_witnesses(result.graph6)
                 verified = BR.verify_witness(graph, tree, witness)
                 angles = join(BR.rational_text.(witness.angle_pi_multiples), ",")

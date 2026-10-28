@@ -93,12 +93,10 @@ end
         result = D.ProofWorkflow.execute([
             "--n", "4", "--precision", "128", "--record-evidence", "--output", output,
         ])
-        @test result.leaf_filter.status == :proved_excluded
-        @test result.leaf_filter.total_graphs == 5
-        @test result.leaf_filter.leaf_graphs == result.leaf_filter.proved_graphs == 3
-        @test Set(graph.graph6 for graph in result.leaf_filter.graph_results) == Set(["CF", "CN", "CR"])
-        @test all(isempty(run.unresolved) for graph in result.leaf_filter.graph_results for run in graph.runs)
-        @test isempty(result.search_results)
+        @test result.connected_census == 5
+        @test Set(graph.graph6 for graph in result.search_results) == Set(["CF", "CN", "CR"])
+        @test all(graph -> graph.status == :complete && isempty(graph.unresolved_boxes) &&
+            isempty(graph.candidates), result.search_results)
         @test result.analysis.processed_candidates == result.analysis.declared_candidates == 2
         @test result.analysis.conclusion_counts == Dict(:target_endpoint_exactly_verified => 1, :target_family_exactly_verified => 1)
         @test isnothing(D.ProofWorkflow.assert_closure_complete(result.analysis))
@@ -122,7 +120,8 @@ end
         run = D.read_json_file(joinpath(output, "n4", "run.json"))
         @test run["connected_census"] == 5
         @test run["leaf_excluded"] == 3
-        @test run["angular_graphs"] == run["angular_candidates"] == 0
+        @test run["interval_graphs"] == 3
+        @test run["isolated_boxes"] == 0
         @test run["analysis_objects"] == 2
         @test run["equality_family_objects"] == run["equality_endpoint_objects"] == 1
         @test run["four_disk_scope"]["excluded_graph6"] == "C~"

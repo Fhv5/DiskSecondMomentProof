@@ -7,8 +7,8 @@ using ..DiskSecondMomentProof: Configuration, ContactGraph, contact_matrix,
     num_contacts, gradient, SecondMomentObjective, evaluate
 import ..DiskSecondMomentProof
 
-const LS = DiskSecondMomentProof.CandidateSearch.LeaflessSearch
-const LE = DiskSecondMomentProof.CandidateSearch.LeafExclusion
+const LS = DiskSecondMomentProof.CandidateSearch.IntervalSearch
+const LE = DiskSecondMomentProof.CandidateSearch.LeafFilters
 
 export RefinedCandidate, refine_candidate, write_refinement_report
 
@@ -16,6 +16,7 @@ export RefinedCandidate, refine_candidate, write_refinement_report
 struct RefinedCandidate{T<:ArbReal}
     graph6::String
     kind::Symbol
+    chart::LS.AngularChart
     isolation_box::Vector{T}
     root_state_box::Vector{T}
     angle_box::Vector{T}
@@ -47,6 +48,10 @@ function write_refinement_report(records, path::AbstractString)
                 "candidate_id" => identifier,
                 "graph6" => candidate.graph6,
                 "kind" => string(candidate.kind),
+                "selected_leaf" => candidate.chart.selected_leaf,
+                "oriented_tree" => [collect(edge) for edge in candidate.chart.tree],
+                "reflection_angle_index" => candidate.chart.reflection_index,
+                "angle_order_constraints" => [collect(pair) for pair in candidate.chart.symmetry_constraints],
                 "angular_state" => _interval_record.(candidate.root_state_box),
                 "centers" => [
                     [_interval_record(candidate.center_box.centers[axis, vertex]) for axis in 1:2]
@@ -80,7 +85,7 @@ function refine_candidate(graph6::AbstractString, candidate::LS.IsolatedCandidat
                           precision::Int=512, iterations::Int=16)
     T = ArbReal{precision}
     graph = LE.graph_data(graph6)
-    tree = LS.rooted_tree(graph)
+    tree = candidate.chart.tree
     k = graph.n - 2
     q = length(graph.edges) - (graph.n - 1)
     evaluator = _root_evaluator(T, graph, tree, candidate.kind, k, q)
@@ -120,7 +125,7 @@ function refine_candidate(graph6::AbstractString, candidate::LS.IsolatedCandidat
         throw(ArgumentError("transferred multiplier enclosure is incompatible with stationarity"))
 
     return RefinedCandidate(
-        String(graph6), candidate.kind, source_box, state, angles,
+        String(graph6), candidate.kind, candidate.chart, source_box, state, angles,
         center_box, lambda_box, pivots, evaluate(SecondMomentObjective(), center_box),
     )
 end

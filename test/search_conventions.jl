@@ -3,7 +3,7 @@ using DiskSecondMomentProof
 
 @testset "Search conventions across the two-to-six-disk census" begin
     SC = DiskSecondMomentProof.SearchConventions
-    LE = CandidateSearch.LeafExclusion
+    LE = CandidateSearch.LeafFilters
     patterns = Dict{String,Int}()
     for n in 2:6, code in load_connected_graphs(n)
         graph = LE.graph_data(code)
@@ -54,7 +54,7 @@ end
 
 @testset "EPVW witness coordinate and multiplier order" begin
     SC = DiskSecondMomentProof.SearchConventions
-    graph = CandidateSearch.LeafExclusion.graph_data("EPVW")
+    graph = CandidateSearch.LeafFilters.graph_data("EPVW")
     chart = SC.search_chart(graph)
     @test chart["anchor_edge"] == [1, 3]
     @test chart["angle_edges"] == [[1, 6], [3, 4], [6, 2], [6, 5]]
@@ -69,7 +69,7 @@ end
     inverse = invperm(p)
     @test p != inverse
     augmented = vcat(graph.edges, witness.extra_contacts)
-    target = Set(CandidateSearch.LeafExclusion.graph_data("EQlw").edges)
+    target = Set(CandidateSearch.LeafFilters.graph_data("EQlw").edges)
     @test Set(minmax(p[u], p[v]) for (u, v) in augmented) == target
     @test Set(minmax(inverse[u], inverse[v]) for (u, v) in augmented) != target
     @test minmax(p[1], p[4]) == (4, 6)
@@ -87,16 +87,16 @@ end
             @test run["files_sha256"]["search/conventions.json"] ==
                 DiskSecondMomentProof.EvidenceArchive.sha256_file(path)
             conventions = DiskSecondMomentProof.read_json_file(path)
-            @test conventions["schema_version"] == 1
+            @test conventions["schema_version"] == 2
             @test occursin("p[old] = new; c'_p[i] = c_i", conventions["permutation_action"])
-            @test length(conventions["graphs"]) == result.leaf_filter.total_graphs
+            @test length(conventions["graphs"]) == result.connected_census
             @test count(g -> g["route"] == "algebraic_target", conventions["graphs"]) == 1
             searches = [s for g in conventions["graphs"] for s in g["searches"]]
             @test length(searches) == n - 2
             for chart in searches
                 @test isfile(joinpath(directory, chart["box_records_file"]))
-                @test chart["selected_leaf"] == only(only(result.leaf_filter.graph_results).runs).leaf
-                @test chart["status"] == "proved_excluded"
+                @test chart["selected_leaf"] == only(result.search_results).chart.selected_leaf
+                @test chart["status"] == "complete"
             end
         end
     end

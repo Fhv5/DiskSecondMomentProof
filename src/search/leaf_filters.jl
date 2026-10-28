@@ -1,38 +1,15 @@
-module LeafExclusion
+module LeafFilters
 
 using ArbNumerics
 using LinearAlgebra
 using ...DiskSecondMomentProof: ContactGraph
 import ...DiskSecondMomentProof: IntervalSafety
 
-export LeafAngleBox,
-       LeafExclusionOptions,
-       LeafExclusionStatistics,
-       LeafExclusionRun,
-       LeafGraphExclusion,
-       LeafCensusExclusion,
-       write_leaf_exclusion_reports
-
-"""
-Interval branch-and-prune for the contact-leaf obstruction.
-
-For every connected graph with a leaf, the procedure covers all of its labelled
-realizations (up to translations, rotations, and reflection) by boxes of
-spanning-tree angles.  A box is removed only after an ArbReal interval
-calculation proves that at least one necessary condition for an ambient local
-minimum is impossible throughout that box.
-
-A completed run with status `proved_excluded` is a proof.  A run that reaches
-an operational limit is reported as `unresolved`; it is never silently treated
-as an exclusion.
-This file contains library code only.  Argument parsing, terminal output, and
-filesystem policy belong to the command-line scripts.
-"""
+export AngleBox, GraphData
 
 const RationalBig = Rational{BigInt}
-const PACKAGE_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-struct LeafGraphData
+struct GraphData
     code::String
     n::Int
     edges::Vector{Tuple{Int,Int}}
@@ -43,88 +20,10 @@ struct LeafGraphData
 end
 
 """Rational angular box used by the exhaustive branch-and-prune cover."""
-struct LeafAngleBox
+struct AngleBox
     lower::Vector{RationalBig}
     upper::Vector{RationalBig}
     depth::Int
-end
-
-"""Counters recording how boxes were handled during leaf exclusion."""
-mutable struct LeafExclusionStatistics
-    visited::Int
-    split::Int
-    excluded_contact::Int
-    excluded_overlap::Int
-    excluded_leaf_equilibrium::Int
-    excluded_bridge_equilibrium::Int
-    excluded_bridge_rotation::Int
-    excluded_symmetry::Int
-    excluded_krawczyk::Int
-    excluded_multiplier::Int
-    excluded_stationarity::Int
-    excluded_moment_balance::Int
-    unresolved_rank::Int
-    unresolved_limit::Int
-end
-
-LeafExclusionStatistics() = LeafExclusionStatistics(
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-
-"""Result of applying the obstruction through one selected leaf."""
-struct LeafExclusionRun
-    leaf::Int
-    status::Symbol
-    stats::LeafExclusionStatistics
-    elapsed_seconds::Float64
-    unresolved::Vector{LeafAngleBox}
-end
-
-"""Result for one graph in the contact-leaf exclusion."""
-struct LeafGraphExclusion
-    graph6::String
-    n::Int
-    leaves::Vector{Int}
-    status::Symbol
-    runs::Vector{LeafExclusionRun}
-end
-
-"""Result for a complete supplied census of connected contact graphs."""
-struct LeafCensusExclusion
-    n::Int
-    total_graphs::Int
-    leaf_graphs::Int
-    proved_graphs::Int
-    status::Symbol
-    graph_results::Vector{LeafGraphExclusion}
-    elapsed_seconds::Float64
-end
-
-"""Precision and operational limits for interval leaf exclusion."""
-struct LeafExclusionOptions
-    precision::Int
-    max_boxes::Int
-    max_depth::Int
-    minimum_width::RationalBig
-    all_leaves::Bool
-end
-
-LeafExclusionOptions(; precision::Int=512,
-                     max_boxes::Int=250_000,
-                     max_depth::Int=80,
-                     minimum_width_power::Int=24,
-                     all_leaves::Bool=false) = begin
-    precision > 0 || throw(ArgumentError("precision must be positive"))
-    max_boxes > 0 || throw(ArgumentError("max_boxes must be positive"))
-    max_depth >= 0 || throw(ArgumentError("max_depth cannot be negative"))
-    minimum_width_power >= 0 ||
-        throw(ArgumentError("minimum_width_power cannot be negative"))
-    LeafExclusionOptions(
-        precision,
-        max_boxes,
-        max_depth,
-        RationalBig(1, BigInt(2)^minimum_width_power),
-        all_leaves,
-    )
 end
 
 function graph_data(code::AbstractString)
@@ -165,10 +64,10 @@ function graph_data(code::AbstractString)
         end
         push!(bridge_cuts, (edge_index, side, inside, outside))
     end
-    return LeafGraphData(code, n, edges, neighbors, nonedges, leaves, bridge_cuts)
+    return GraphData(code, n, edges, neighbors, nonedges, leaves, bridge_cuts)
 end
 
-function anchored_tree(graph::LeafGraphData, leaf::Int)
+function anchored_tree(graph::GraphData, leaf::Int)
     neighbor = only(graph.adjacency[leaf])
     tree = Tuple{Int,Int}[(leaf, neighbor)]
     seen = Set((leaf, neighbor))
@@ -194,7 +93,7 @@ function initial_box(n::Int, reflection_index::Int)
     lower = fill(-pi_upper, dimensions)
     upper = fill(pi_upper, dimensions)
     dimensions > 0 && (lower[reflection_index] = 0)
-    return LeafAngleBox(lower, upper, 0)
+    return AngleBox(lower, upper, 0)
 end
 
 function swapped_vertex(vertex::Int, first::Int, second::Int)
@@ -203,7 +102,7 @@ function swapped_vertex(vertex::Int, first::Int, second::Int)
     return vertex
 end
 
-function vertex_swap_is_automorphism(graph::LeafGraphData, first::Int, second::Int)
+function vertex_swap_is_automorphism(graph::GraphData, first::Int, second::Int)
     original = Set(graph.edges)
     mapped = Set{Tuple{Int,Int}}()
     for (left, right) in graph.edges
@@ -236,7 +135,7 @@ function tree_descendant(vertex::Int, ancestor::Int, parent_of::Dict{Int,Int})
     end
 end
 
-function verified_symmetry_pattern(graph::LeafGraphData, tree, groups,
+function verified_symmetry_pattern(graph::GraphData, tree, groups,
                                    reflection_index::Int, parent, child)
     pattern = get(VERIFIED_SYMMETRY_PATTERNS, graph.code, :unsupported)
     pattern == :unsupported && return false
@@ -288,7 +187,7 @@ function verified_symmetry_pattern(graph::LeafGraphData, tree, groups,
 end
 
 """Return only symmetry reductions whose tree pattern is proved for this census."""
-function angular_symmetry_data(graph::LeafGraphData, tree)
+function angular_symmetry_data(graph::GraphData, tree)
     dimension = graph.n - 2
     parent = [tree[index + 1][1] for index in 1:dimension]
     child = [tree[index + 1][2] for index in 1:dimension]
@@ -333,7 +232,7 @@ function angular_symmetry_data(graph::LeafGraphData, tree)
     return reflection_index, constraints
 end
 
-function symmetry_possible(box::LeafAngleBox, constraints)
+function symmetry_possible(box::AngleBox, constraints)
     for (first, second) in constraints
         box.lower[first] > box.upper[second] && return false
     end
@@ -344,11 +243,11 @@ function interval_from_rationals(::Type{T}, lo::RationalBig, hi::RationalBig) wh
     return IntervalSafety.enclosing_rational_interval(T, lo, hi)
 end
 
-function interval_angles(::Type{T}, box::LeafAngleBox) where {T<:ArbReal}
+function interval_angles(::Type{T}, box::AngleBox) where {T<:ArbReal}
     return [interval_from_rationals(T, box.lower[i], box.upper[i]) for i in eachindex(box.lower)]
 end
 
-function centers_from_angles(::Type{T}, graph::LeafGraphData, tree, angles) where {T<:ArbReal}
+function centers_from_angles(::Type{T}, graph::GraphData, tree, angles) where {T<:ArbReal}
     raw = fill(T(0), 2, graph.n)
     placed = falses(graph.n)
     leaf, neighbor = tree[1]
@@ -370,7 +269,7 @@ function centers_from_angles(::Type{T}, graph::LeafGraphData, tree, angles) wher
     return raw, centers
 end
 
-function centers_with_angle_derivatives(::Type{T}, graph::LeafGraphData, tree, angles) where {T<:ArbReal}
+function centers_with_angle_derivatives(::Type{T}, graph::GraphData, tree, angles) where {T<:ArbReal}
     dimension = length(angles)
     raw = fill(T(0), 2, graph.n)
     derivative = fill(T(0), 2, graph.n, dimension)
@@ -386,7 +285,7 @@ function centers_with_angle_derivatives(::Type{T}, graph::LeafGraphData, tree, a
     return raw, derivative
 end
 
-function contact_matrix_interval(::Type{T}, centers, graph::LeafGraphData) where {T<:ArbReal}
+function contact_matrix_interval(::Type{T}, centers, graph::GraphData) where {T<:ArbReal}
     matrix = fill(T(0), length(graph.edges), 2 * graph.n)
     for (row, (left, right)) in enumerate(graph.edges)
         dx = centers[1, left] - centers[1, right]
@@ -409,7 +308,7 @@ function squared_gap(centers, left::Int, right::Int, four)
     return dx * dx + dy * dy - four
 end
 
-function leaf_equilibrium_possible(centers, raw_centers, graph::LeafGraphData, leaf_limit)
+function leaf_equilibrium_possible(centers, raw_centers, graph::GraphData, leaf_limit)
     for leaf in graph.leaves
         neighbor = only(graph.adjacency[leaf])
         ux = raw_centers[1, leaf] - raw_centers[1, neighbor]
@@ -425,7 +324,7 @@ function leaf_equilibrium_possible(centers, raw_centers, graph::LeafGraphData, l
     return true
 end
 
-function bridge_rotation_possible(centers, graph::LeafGraphData)
+function bridge_rotation_possible(centers, graph::GraphData)
     all_vertices = 1:graph.n
     for (_, side, _, outside) in graph.bridge_cuts
         complement = [vertex for vertex in all_vertices if !(vertex in side)]
@@ -445,7 +344,7 @@ function bridge_rotation_possible(centers, graph::LeafGraphData)
     return true
 end
 
-function bridge_rotation_system(centers, derivative, graph::LeafGraphData)
+function bridge_rotation_system(centers, derivative, graph::GraphData)
     dimension = size(derivative, 3)
     residuals = Vector{eltype(centers)}(undef, length(graph.bridge_cuts))
     jacobian = Matrix{eltype(centers)}(undef, length(graph.bridge_cuts), dimension)
@@ -475,7 +374,7 @@ function bridge_rotation_system(centers, derivative, graph::LeafGraphData)
     return residuals, jacobian
 end
 
-function krawczyk_excludes_bridge_root(::Type{T}, graph::LeafGraphData, tree,
+function krawczyk_excludes_bridge_root(::Type{T}, graph::GraphData, tree,
                                        angle_box) where {T<:ArbReal}
     dimension = length(angle_box)
     length(graph.bridge_cuts) >= dimension || return false
@@ -529,74 +428,40 @@ function plain_transpose(matrix::AbstractMatrix{T}) where {T}
     return result
 end
 
-function widest_dimension(box::LeafAngleBox)
+function widest_dimension(box::AngleBox)
     widths = box.upper .- box.lower
     _, index = findmax(widths)
     return index, widths[index]
 end
 
-function split_box(box::LeafAngleBox, dimension::Int)
+function split_box(box::AngleBox, dimension::Int)
     middle = (box.lower[dimension] + box.upper[dimension]) / 2
     left_upper = copy(box.upper)
     left_upper[dimension] = middle
     right_lower = copy(box.lower)
     right_lower[dimension] = middle
     return (
-        LeafAngleBox(copy(box.lower), left_upper, box.depth + 1),
-        LeafAngleBox(right_lower, copy(box.upper), box.depth + 1),
+        AngleBox(copy(box.lower), left_upper, box.depth + 1),
+        AngleBox(right_lower, copy(box.upper), box.depth + 1),
     )
 end
 
-function increment_exclusion!(stats::LeafExclusionStatistics, reason::Symbol)
-    reason == :contact && (stats.excluded_contact += 1)
-    reason == :overlap && (stats.excluded_overlap += 1)
-    reason == :leaf_equilibrium && (stats.excluded_leaf_equilibrium += 1)
-    reason == :bridge_equilibrium && (stats.excluded_bridge_equilibrium += 1)
-    reason == :bridge_rotation && (stats.excluded_bridge_rotation += 1)
-    reason == :symmetry && (stats.excluded_symmetry += 1)
-    reason == :krawczyk && (stats.excluded_krawczyk += 1)
-    reason == :multiplier && (stats.excluded_multiplier += 1)
-    reason == :stationarity && (stats.excluded_stationarity += 1)
-    reason == :moment_balance && (stats.excluded_moment_balance += 1)
-end
-
-function box_text(box::LeafAngleBox)
-    intervals = ["$(box.lower[i]):$(box.upper[i])" for i in eachindex(box.lower)]
-    return join(intervals, ";")
-end
-
-"""Write leaf-filter decisions and unresolved interval boxes."""
-function write_leaf_exclusion_reports(result::LeafCensusExclusion,
-                                      output_directory::AbstractString)
-    mkpath(output_directory)
-    summary_path = joinpath(output_directory,
-                            "n$(result.n)-leaf-interval-summary.tsv")
-    unresolved_path = joinpath(output_directory,
-                               "n$(result.n)-leaf-interval-unresolved.tsv")
-    open(summary_path, "w") do io
-        println(io, "graph6\tleaf\tstatus\tvisited\tsplit\tcontact\toverlap\tleaf_equilibrium\tbridge_equilibrium\tbridge_rotation\tsymmetry\tkrawczyk\tmultiplier\tstationarity\tmoment_balance\tunresolved_rank\tunresolved_limit\tseconds")
-        for graph_result in result.graph_results, run in graph_result.runs
-            s = run.stats
-            println(io, join((graph_result.graph6, run.leaf, run.status, s.visited, s.split,
-                              s.excluded_contact, s.excluded_overlap,
-                              s.excluded_leaf_equilibrium,
-                              s.excluded_bridge_equilibrium,
-                              s.excluded_bridge_rotation,
-                              s.excluded_symmetry,
-                              s.excluded_krawczyk,
-                              s.excluded_multiplier, s.excluded_stationarity,
-                              s.excluded_moment_balance, s.unresolved_rank,
-                              s.unresolved_limit,
-                              round(run.elapsed_seconds; digits=6)), '\t'))
+"""Test necessary equilibrium and leaf-force bounds across contact bridges."""
+function bridge_equilibrium_possible(centers, raw_centers, graph, leaf_limit)
+    for (edge_index, side, inside, outside) in graph.bridge_cuts
+        sx = sum(centers[1, vertex] for vertex in side)
+        sy = sum(centers[2, vertex] for vertex in side)
+        ux = raw_centers[1, inside] - raw_centers[1, outside]
+        uy = raw_centers[2, inside] - raw_centers[2, outside]
+        contains_zero(sx * uy - sy * ux) || return false
+        coefficient = (sx * ux + sy * uy) / 4
+        upperbound(coefficient) < 0 && return false
+        left, right = graph.edges[edge_index]
+        if left in graph.leaves || right in graph.leaves
+            lowerbound(coefficient) > upperbound(leaf_limit) && return false
         end
     end
-    open(unresolved_path, "w") do io
-        println(io, "graph6\tleaf\tdepth\tangle_intervals_exact")
-        for graph_result in result.graph_results, run in graph_result.runs, box in run.unresolved
-            println(io, "$(graph_result.graph6)\t$(run.leaf)\t$(box.depth)\t$(box_text(box))")
-        end
-    end
-    return summary_path, unresolved_path
+    return true
 end
 
 end
