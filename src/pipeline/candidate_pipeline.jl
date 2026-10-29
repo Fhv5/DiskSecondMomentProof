@@ -81,20 +81,6 @@ function analyze_search_results(n::Int, graph_results, family_entries; precision
     return analysis, refined_records
 end
 
-function print_proof_summary(result::ComputationalProofResult)
-    println("\nComputational proof summary for n=$(result.n)")
-    println("Input: $(result.filepath)")
-    println("Processed: $(result.processed_candidates) / $(result.declared_candidates)")
-    println("Routes:")
-    for (route, count) in sort!(collect(result.route_counts), by=first)
-        println("  ", rpad(string(route), 48), count)
-    end
-    println("Conclusions:")
-    for (status, count) in sort!(collect(result.conclusion_counts), by=first)
-        println("  ", rpad(string(status), 48), count)
-    end
-end
-
 """Convert a candidate identifier into a portable report filename."""
 function _report_filename(candidate_id::AbstractString)
     safe = replace(String(candidate_id), r"[^A-Za-z0-9._-]" => "_")

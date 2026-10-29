@@ -32,6 +32,7 @@ include("search/minimum_candidate_search.jl")
 include("pipeline/candidate_deduplication.jl")
 include("evidence/search_conventions.jl")
 include("pipeline/proof_workflow.jl")
+include("pipeline/execution_summary.jl")
 
 export Configuration,
        num_disks,

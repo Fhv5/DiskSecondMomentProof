@@ -221,7 +221,7 @@ function execute(arguments)
     evidence_directory = record_evidence ? joinpath(output_directory, "evidence") : nothing
     results = LS.GraphSearchResult[]
 
-    println("Computational proof for n=$n")
+    println("Execution for $n disks")
     println("Connected census: $(length(all_codes)); precision: $precision bits")
     println("Common interval search: max_boxes=$max_boxes max_depth=$max_depth " *
             "minimum_width=2^(-$minimum_width_power) krawczyk_depth=$krawczyk_depth")
@@ -272,20 +272,14 @@ function execute(arguments)
         search_output_directory,
     )
     total_candidates = sum((length(result.candidates) for result in results); init=0)
-    deduplicated_candidates = sum((length(classes) for classes in classes_by_result); init=0)
     unresolved_graphs = count(result -> result.status == :unresolved, results)
-    println("Completed graphs: $(length(results) - unresolved_graphs)/$(length(results))")
-    println("Raw isolated candidate boxes: $total_candidates")
-    println("Diagnostic geometric classes: $deduplicated_candidates")
-    println("Unresolved graphs: $unresolved_graphs")
-    println("Search reports: $search_output_directory")
-    println("Unresolved-box report: $unresolved_path")
-    println("Deduplication report: $deduplication_path")
-
-    unresolved_graphs == 0 || error(
-        "Candidate search has unresolved graphs; see the written reports",
-    )
-    println("Candidate search completeness guard: passed")
+    algebraic_codes = vcat([target_graph], collect(family_graphs))
+    if unresolved_graphs != 0
+        DiskSecondMomentProof.print_proof_summary(nothing; n=n, census_codes=all_codes,
+            graph_results=results, algebraic_codes=algebraic_codes,
+            elapsed_seconds=time() - started, evidence_directory=output_directory)
+        error("Candidate search has unresolved graphs; see the written reports")
+    end
 
     analysis = nothing
     if run_analysis
@@ -301,28 +295,23 @@ function execute(arguments)
             joinpath(output_directory, "refinement", "candidates.jsonl"),
         )
         println("Refinement report: $refinement_path")
-        DiskSecondMomentProof.print_proof_summary(analysis)
         report_directory = joinpath(output_directory, "analysis")
         DiskSecondMomentProof.write_candidate_reports(analysis, report_directory)
         println("Analysis reports: $report_directory")
-        assert_closure_complete(analysis)
-        if isempty(graph_filter)
-            println("Closure: all required checks passed for the full census")
-        else
-            println(
-                "Analysis terminal-status guard: passed for the selected graph; " *
-                "this is a partial diagnostic run, not a complete global proof",
-            )
+        try
+            assert_closure_complete(analysis)
+        catch
+            DiskSecondMomentProof.print_proof_summary(analysis; n=n, census_codes=all_codes,
+                graph_results=results, algebraic_codes=algebraic_codes,
+                elapsed_seconds=time() - started, evidence_directory=output_directory)
+            rethrow()
         end
     end
-    println("Total elapsed time: $(round(time() - started; digits=2))s")
-    if !run_analysis
-        println(
-            "Analysis was skipped; this execution is a search diagnostic run, " *
-            "not a complete global proof",
-        )
-    elseif isempty(graph_filter)
-        println("Complete proof workflow: all required checks passed")
+    DiskSecondMomentProof.print_proof_summary(analysis; n=n, census_codes=all_codes,
+        graph_results=results, algebraic_codes=algebraic_codes,
+        complete=run_analysis && isempty(graph_filter),
+        elapsed_seconds=time() - started, evidence_directory=output_directory)
+    if run_analysis && isempty(graph_filter)
         if record_evidence
             parameters = Dict(
                 "precision" => precision,
